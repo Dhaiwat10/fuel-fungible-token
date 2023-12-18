@@ -1,91 +1,82 @@
-import type { TestContractAbi } from "@/sway-api";
-import { TestContractAbi__factory } from "@/sway-api";
-import contractIds from "@/sway-api/contract-ids.json";
-import {
-  Button,
-  FuelLogo,
-  HStack,
-  Heading,
-  Link,
-  Text,
-  VStack,
-} from "@fuel-ui/react";
-import { Provider, Wallet, bn } from "fuels";
-import { useEffect, useState } from "react";
+import { Button, Input, InputAmount } from '@fuel-ui/react';
 
-const contractId = contractIds.testContract;
+import contractIds from '@/sway-api/contract-ids.json';
+import { TestContractAbi, TestContractAbi__factory } from '@/sway-api';
+import { useEffect, useState } from 'react';
+import {
+  BaseAssetId,
+  Provider,
+  Wallet,
+  WalletUnlocked,
+  bn,
+  concat,
+  hash,
+} from 'fuels';
+import { useBalance } from './hooks/useBalance';
+
+const CONTRACT_ID = contractIds.testContract;
 
 export default function Home() {
-  const [contract, setContract] = useState<TestContractAbi>();
-  const [counter, setCounter] = useState<number>();
+  const [contractInstance, setContractInstance] = useState<TestContractAbi>();
+  const [wallet, setWallet] = useState<WalletUnlocked>();
+  const { balance: baseAssetBalance } = useBalance({
+    provider: contractInstance?.provider,
+    accountAddress: wallet?.address,
+    assetId: BaseAssetId,
+  });
+
+  const { balance: customAssetBalance } = useBalance({
+    provider: contractInstance?.provider,
+    accountAddress: wallet?.address,
+    assetId: hash(concat([CONTRACT_ID, BaseAssetId])),
+  });
 
   useEffect(() => {
     (async () => {
-      const provider = await Provider.create("http://127.0.0.1:4000/graphql");
-      // 0x1 is the private key of one of the fauceted accounts on your local Fuel node
-      const wallet = Wallet.fromPrivateKey("0x01", provider); 
-      const testContract = TestContractAbi__factory.connect(contractId, wallet);
-      setContract(testContract);
-      const { value } = await testContract.functions
-        .get_count()
+      const provider = await Provider.create('http://127.0.0.1:4000/graphql');
+      const wallet = Wallet.fromPrivateKey('0x01', provider);
+      const contract = TestContractAbi__factory.connect(CONTRACT_ID, wallet);
+      setWallet(wallet);
+      setContractInstance(contract);
+    })();
+  }, []);
+
+  const onMintClicked = async () => {
+    if (contractInstance && wallet) {
+      await contractInstance?.functions
+        .mint(
+          {
+            Address: {
+              value: wallet?.address.toB256(),
+            },
+          },
+          BaseAssetId,
+          bn(10_000)
+        )
         .txParams({
           gasPrice: 1,
           gasLimit: 10_000,
         })
-        .simulate();
-      setCounter(value.toNumber());
-      // eslint-disable-next-line no-console
-    })().catch(console.error);
-  }, []);
-
-  // eslint-disable-next-line consistent-return
-  const onIncrementPressed = async () => {
-    if (!contract) {
-      // eslint-disable-next-line no-alert
-      return alert("Contract not loaded");
+        .call();
     }
-    const { value } = await contract.functions
-      .increment_counter(bn(1))
-      .txParams({
-        gasPrice: 1,
-        gasLimit: 10_000,
-      })
-      .call();
-    setCounter(value.toNumber());
   };
 
   return (
-    <VStack className={`min-h-screen items-center p-24`}>
-      <HStack>
-        <FuelLogo />
-        <Heading>Welcome to Fuel</Heading>
-      </HStack>
-
-      <Text>
-        Get started by editing <i>sway-contracts/main.sw</i> or{" "}
-        <i>src/pages/index.tsx</i>.
-      </Text>
-
-      <Text>
-        This boilerplate uses the new{" "}
-        <Link href="https://fuellabs.github.io/fuels-ts/guide/cli/">
-          Fuels CLI
-        </Link>{" "}
-        enable type-safe hot-reloading for your Sway smart contracts.
-      </Text>
-
-      <Heading as="h3">Counter</Heading>
-
-      <Text fontSize="5xl">{counter}</Text>
-
-      <Button
-        onPress={onIncrementPressed}
-        style={{
-          marginTop: 24,
-        }}
-      >
-        Increment Counter
-      </Button>
-    </VStack>
+    <div className='p-24 items-center flex flex-col'>
+      {contractInstance && (
+        <div>
+          <h1 className='text-2xl'>
+            Contract Address: {contractInstance.id.toB256()}
+          </h1>
+          <h1 className='text-2xl'>
+            Native Asset Balance: {baseAssetBalance?.toString()}
+          </h1>
+          <h1 className='text-2xl'>
+            Custom Asset Balance: {customAssetBalance?.toString()}
+          </h1>
+        </div>
+      )}
+      <Button onClick={onMintClicked}>Mint Custom Asset</Button>
+    </div>
   );
 }
